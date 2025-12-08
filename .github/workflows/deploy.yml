@@ -76,92 +76,37 @@ jobs:
 
       - name: Actualizar codigo en EC2
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            git pull origin main
-            echo "✅ Codigo actualizado"
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && git pull origin main && echo '✅ Codigo actualizado'"
 
       - name: Actualizar variables de entorno
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            echo " Actualizando archivos .env..."
-
-            cat > frontend/.env << 'ENVFILE'
-          REACT_APP_API_URL=http://${{ secrets.SSH_HOST }}:5000/api
-          ENVFILE
-            
-            cat > backend/.env << 'ENVFILE'
-          PORT=5000
-          NODE_ENV=production
-          DB_HOST=postgres
-          DB_PORT=5432
-          DB_NAME=cruddb
-          DB_USER=postgres
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          ENVFILE
-            
-            echo "✅ Variables de entorno actualizadas"
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo 'REACT_APP_API_URL=http://${{ secrets.SSH_HOST }}:5000/api' > frontend/.env"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && printf 'PORT=5000\nNODE_ENV=production\nDB_HOST=postgres\nDB_PORT=5432\nDB_NAME=cruddb\nDB_USER=postgres\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}' > backend/.env"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo '✅ Variables de entorno actualizadas'"
 
       - name: Detener contenedores
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            echo "🛑 Deteniendo contenedores..."
-            docker compose -f docker-compose.prod.yml down
-            echo "✅ Contenedores detenidos"
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo '🛑 Deteniendo contenedores...' && docker compose -f docker-compose.prod.yml down && echo '✅ Contenedores detenidos'"
 
       - name: Construir imagenes en servidor
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            docker compose -f docker-compose.prod.yml build --no-cache
-            echo " Imagenes construidas"
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker compose -f docker-compose.prod.yml build --no-cache && echo ' Imagenes construidas'"
 
       - name: Iniciar contenedores
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            docker compose -f docker-compose.prod.yml up -d
-            sleep 30
-            echo "✅ Contenedores iniciados"
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker compose -f docker-compose.prod.yml up -d && sleep 30 && echo '✅ Contenedores iniciados'"
 
       - name: Verificar deployment
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            docker ps
-            
-            if curl -f http://localhost:5000/health > /dev/null 2>&1; then
-              echo "✅ Backend funcionando"
-            else
-              echo "❌ Backend no responde"
-              exit 1
-            fi
-            
-            if curl -f http://localhost:80 > /dev/null 2>&1; then
-              echo "✅ Frontend accesible"
-            else
-              echo "❌ Frontend no accesible"
-              exit 1
-            fi
-            
-            echo " Deployment exitoso!"
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker ps"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "curl -f http://localhost:5000/health > /dev/null 2>&1 && echo '✅ Backend funcionando' || (echo '❌ Backend no responde' && exit 1)"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "curl -f http://localhost:80 > /dev/null 2>&1 && echo '✅ Frontend accesible' || (echo '❌ Frontend no accesible' && exit 1)"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo ' Deployment exitoso!'"
 
       - name: Mostrar logs
         if: always()
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ${{ env.PROJECT_PATH }}
-            echo " Logs recientes:"
-            docker compose -f docker-compose.prod.yml logs --tail=20
-          EOF
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo ' Logs recientes:' && docker compose -f docker-compose.prod.yml logs --tail=20"
 
       - name: Resumen del deployment
         run: |
