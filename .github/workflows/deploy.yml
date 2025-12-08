@@ -105,8 +105,9 @@ jobs:
 
       - name: Mostrar logs
         if: always()
+        continue-on-error: true
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo ' Logs recientes:' && docker compose -f docker-compose.prod.yml logs --tail=20"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo ' Logs recientes:' && docker compose -f docker-compose.prod.yml logs --tail=20 || true"
 
       - name: Resumen del deployment
         run: |
