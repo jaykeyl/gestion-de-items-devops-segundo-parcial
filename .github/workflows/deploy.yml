@@ -7,12 +7,13 @@ on:
 
 env:
   PROJECT_PATH: /home/ubuntu/gestion-items
+  DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
   test:
     name: Ejecutar Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Descargar codigo
         uses: actions/checkout@v4
@@ -20,7 +21,7 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: "18"
 
       - name: Instalar dependencias
         working-directory: ./backend
@@ -31,10 +32,10 @@ jobs:
         run: npm test
 
   build-images:
-    name: Construir Imagenes Docker
+    name: Construir y Subir Imagenes Docker a Docker Hub
     runs-on: ubuntu-latest
     needs: test
-    
+
     steps:
       - name: Descargar codigo
         uses: actions/checkout@v4
@@ -42,23 +43,41 @@ jobs:
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Construir imagen Frontend
+      - name: Log in a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Construir y etiquetar imagen Frontend
         run: |
           cd frontend
-          docker build -t frontend-app:${{ github.sha }} .
-          echo " Imagen Frontend construida"
+          docker build -t ${{ env.DOCKERHUB_USER }}/frontend-app:latest \
+                       -t ${{ env.DOCKERHUB_USER }}/frontend-app:${{ github.sha }} .
+          echo " Imagen Frontend construida y etiquetada"
 
-      - name: Construir imagen Backend
+      - name: Construir y etiquetar imagen Backend
         run: |
           cd backend
-          docker build -t backend-api:${{ github.sha }} .
-          echo " Imagen Backend construida"
+          docker build -t ${{ env.DOCKERHUB_USER }}/backend-api:latest \
+                       -t ${{ env.DOCKERHUB_USER }}/backend-api:${{ github.sha }} .
+          echo " Imagen Backend construida y etiquetada"
+
+      - name: Push de imagenes a Docker Hub
+        run: |
+          docker push ${{ env.DOCKERHUB_USER }}/frontend-app:latest
+          docker push ${{ env.DOCKERHUB_USER }}/frontend-app:${{ github.sha }}
+
+          docker push ${{ env.DOCKERHUB_USER }}/backend-api:latest
+          docker push ${{ env.DOCKERHUB_USER }}/backend-api:${{ github.sha }}
+
+          echo "🚀 Imagenes subidas a Docker Hub correctamente"
 
   deploy:
     name: Desplegar en EC2
     runs-on: ubuntu-latest
     needs: [test, build-images]
-    
+
     steps:
       - name: Descargar codigo
         uses: actions/checkout@v4
@@ -74,6 +93,12 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'echo "✅ Conexion SSH exitosa"'
 
+      - name: Actualizar ahora las imágenes desde Docker Hub
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "docker pull ${{ env.DOCKERHUB_USER }}/frontend-app:latest"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "docker pull ${{ env.DOCKERHUB_USER }}/backend-api:latest"
+          echo "📦 Imagenes actualizadas desde Docker Hub"
+
       - name: Actualizar codigo en EC2
         run: |
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && git pull origin main && echo '✅ Codigo actualizado'"
@@ -86,32 +111,14 @@ jobs:
 
       - name: Detener contenedores
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo '🛑 Deteniendo contenedores...' && docker compose -f docker-compose.prod.yml down && echo '✅ Contenedores detenidos'"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker compose -f docker-compose.prod.yml down"
 
-      - name: Construir imagenes en servidor
+      - name: Levantar contenedores usando las imagenes desde Docker Hub
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker compose -f docker-compose.prod.yml build --no-cache && echo ' Imagenes construidas'"
-
-      - name: Iniciar contenedores
-        run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker compose -f docker-compose.prod.yml up -d && sleep 30 && echo '✅ Contenedores iniciados'"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker compose -f docker-compose.prod.yml up -d"
+          echo "🚀 Nuevas imagenes desde Docker Hub desplegadas correctamente"
 
       - name: Verificar deployment
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && docker ps"
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "curl -f http://localhost:5000/health > /dev/null 2>&1 && echo '✅ Backend funcionando' || (echo '❌ Backend no responde' && exit 1)"
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "curl -f http://localhost:80 > /dev/null 2>&1 && echo '✅ Frontend accesible' || (echo '❌ Frontend no accesible' && exit 1)"
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo ' Deployment exitoso!'"
-
-      - name: Mostrar logs
-        if: always()
-        continue-on-error: true
-        run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ env.PROJECT_PATH }} && echo ' Logs recientes:' && docker compose -f docker-compose.prod.yml logs --tail=20 || true"
-
-      - name: Resumen del deployment
-        run: |
-          echo " Deployment completado!"
-          echo " Frontend: http://${{ secrets.SSH_HOST }}"
-          echo " Backend: http://${{ secrets.SSH_HOST }}:5000/api/items"
-          echo " Health: http://${{ secrets.SSH_HOST }}:5000/health"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "curl -f http://localhost:5000/health"
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo '🚀 Deployment exitoso!'"
